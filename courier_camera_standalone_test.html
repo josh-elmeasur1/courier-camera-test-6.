@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Courier QR Camera Test</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17202a;background:#f5f7fa}*{box-sizing:border-box}body{margin:0;padding:18px;max-width:720px;margin-inline:auto}.card{background:#fff;border:1px solid #dce2e8;border-radius:14px;padding:18px;box-shadow:0 2px 10px #17202a0b}.warning{background:#fff4d6;border:1px solid #f0d78c;padding:12px;border-radius:10px;margin-bottom:14px}.muted{color:#5c6874;font-size:14px}button,select{font:inherit;padding:12px;border-radius:9px;border:1px solid #c8d0d8;background:#fff}button.primary{background:#1459c7;color:#fff;border-color:#1459c7}button:disabled{opacity:.5}button{min-height:46px}#reader{width:100%;max-width:520px;margin:14px auto;overflow:hidden}.actions{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}.status{padding:12px;border-radius:9px;background:#eaf1fb;margin:12px 0;overflow-wrap:anywhere}.status.ok{background:#e5f6eb;color:#14532d}.status.bad{background:#fde8e8;color:#8a1c1c}textarea{width:100%;min-height:70px;padding:10px;border:1px solid #c8d0d8;border-radius:8px;font:inherit}label{display:block;font-weight:600;margin:12px 0 6px}select{width:100%}
+</style>
+</head>
+<body>
+<h2>Courier QR Camera Test</h2>
+<div class="warning"><strong>Diagnostic only.</strong> This page does not connect to Frappe, does not submit data, and cannot change Pack, Load, Gate or shipment records.</div>
+<div class="card">
+<p>Open this page on your phone using an <strong>HTTPS</strong> address. Tap Start camera and allow camera access. Point the rear camera at a carton QR code.</p>
+<label for="camera">Camera</label><select id="camera" disabled><option>Camera list appears after permission</option></select>
+<div id="reader"></div>
+<div class="actions"><button class="primary" id="start">Start camera</button><button id="stop" disabled>Stop camera</button></div>
+<div id="status" class="status" role="status" aria-live="polite">Ready. Camera has not been started.</div>
+<label for="decoded">Decoded QR value</label><textarea id="decoded" readonly placeholder="No QR code scanned yet"></textarea>
+<p class="muted">The QR text is displayed locally in this page only. It is not sent to any server.</p>
+</div>
+<script>
+(() => {
+ const $=id=>document.getElementById(id); let scanner=null,running=false,starting=false,lastValue='',lastAt=0,libPromise=null;
+ function status(msg,type=''){ $('status').textContent=msg; $('status').className='status '+type; }
+ function loadLib(){ if(window.Html5Qrcode)return Promise.resolve(); if(libPromise)return libPromise; libPromise=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';s.async=true;s.onload=()=>window.Html5Qrcode?resolve():reject(Error('QR library loaded but API is unavailable.'));s.onerror=()=>reject(Error('Could not load QR library from jsDelivr. Check internet access or try again.'));document.head.appendChild(s)});return libPromise; }
+ function errorText(e){if(e?.name==='NotAllowedError'||e?.name==='PermissionDeniedError')return 'Camera permission was denied or blocked by the browser/app. Check device and browser permissions.';if(e?.name==='NotFoundError'||e?.name==='DevicesNotFoundError')return 'No camera was found on this device.';if(e?.name==='NotReadableError'||e?.name==='TrackStartError')return 'Camera is unavailable or already in use by another app.';return e?.message||String(e||'Unknown camera error.');}
+ async function start(){if(running||starting)return;starting=true;$('start').disabled=true;try{if(!window.isSecureContext)throw Error('This page is not HTTPS. Camera access requires a secure context.');if(!navigator.mediaDevices?.getUserMedia)throw Error('This browser/app does not expose the camera API (getUserMedia).');status('Loading QR decoder…');await loadLib();scanner=new Html5Qrcode('reader',{verbose:false});const cams=await Html5Qrcode.getCameras();if(!cams?.length)throw Error('No camera was returned. Check camera permissions.');$('camera').innerHTML='';cams.forEach((c,i)=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.label||`Camera ${i+1}`;$('camera').appendChild(o)});$('camera').disabled=cams.length<2;const preferred=cams.find(c=>/back|rear|environment/i.test(c.label||''))||cams[cams.length-1];$('camera').value=preferred.id;await startWith(preferred.id);}catch(e){status(errorText(e),'bad');await stop(false);}finally{starting=false;$('start').disabled=running;}}
+ async function startWith(id){await scanner.start(id,{fps:8,qrbox:(w,h)=>{const side=Math.floor(Math.min(w,h,280));return {width:Math.max(160,side),height:Math.max(160,side)}}},value=>{const now=Date.now();if(value===lastValue&&now-lastAt<1800)return;lastValue=value;lastAt=now;$('decoded').value=value;status('QR decoded successfully. No shipment record was changed.','ok')},()=>{});running=true;$('start').disabled=true;$('stop').disabled=false;status('Camera is running. Point it at a carton QR code.','ok');}
+ async function stop(show=true){try{if(scanner&&running)await scanner.stop()}catch(e){}try{if(scanner)scanner.clear()}catch(e){}scanner=null;running=false;$('start').disabled=false;$('stop').disabled=true;if(show)status('Camera stopped. No shipment record was changed.');}
+ $('start').addEventListener('click',start);$('stop').addEventListener('click',()=>stop());$('camera').addEventListener('change',async()=>{if(!running||!scanner)return;try{await scanner.stop();running=false;await startWith($('camera').value)}catch(e){status(errorText(e),'bad');await stop(false)}});document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)stop(false)});
+})();
+</script>
+</body></html>
